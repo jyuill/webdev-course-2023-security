@@ -5,6 +5,7 @@ const bodyParser = require("body-parser");
 const ejs = require("ejs");
 const app = express();
 const mongoose = require("mongoose");
+const encrypt = require("mongoose-encryption");
 
 app.use(express.static("public"));
 app.set('view engine', 'ejs');
@@ -15,17 +16,23 @@ app.use(bodyParser.urlencoded({
 // set up mongodb connection with new database
 mongoose.connect("mongodb://localhost:27017/userDB");
 // mongodb schema
-// couple options - more thorough
+// couple options - more thorough, needed for advanced work, incl encryption
 const userSchema = new mongoose.Schema({
     email: String,
     password: String
 });
-/* simpler - if you're into the brevity thing
+/* simpler - javascript object if you're into the brevity thing
 const userSchema = {
     email: String,
     password: String
 }
 */
+
+// set secret for encryption
+const secret = "ourlittlesecret";
+// at save password will be decrypted; at find will be decrypted
+userSchema.plugin(encrypt, { secret: secret, encryptedFields: ["password"]} );
+
 // new mongodb model (collection) using schema defined above
 const User = new mongoose.model("User", userSchema);
 
