@@ -6,6 +6,7 @@ const ejs = require("ejs");
 const app = express();
 const mongoose = require("mongoose");
 const encrypt = require("mongoose-encryption");
+const md5 = require("md5");
 
 app.use(express.static("public"));
 app.set('view engine', 'ejs');
@@ -32,7 +33,8 @@ const userSchema = {
 // moved to .env
 //const secret = "ourlittlesecret";
 // at save password will be decrypted; at find will be decrypted
-userSchema.plugin(encrypt, { secret: process.env.SECRET, encryptedFields: ["password"]} );
+// substituting with md5 hashing 
+// userSchema.plugin(encrypt, { secret: process.env.SECRET, encryptedFields: ["password"]} );
 
 // new mongodb model (collection) using schema defined above
 const User = new mongoose.model("User", userSchema);
@@ -52,7 +54,9 @@ app.post("/register", function(req, res) {
     // collect inputs from form
     const newUser = new User({
         email: req.body.username,
-        password: req.body.password
+        //password: req.body.password
+        // use md5 hashing
+        password: md5(req.body.password)         
     });
     // save to database and show secrets pg
     /* as shown in course - now throws error
@@ -84,7 +88,8 @@ app.get("/login", function(req, res) {
 // login confirm
 app.post("/login", function(req, res) {
     const username = req.body.username;
-    const password = req.body.password;
+    // calc hashed version of pwd to compare to hashed version in database
+    const password = md5(req.body.password);
     /* shown in course - no longer works
     User.findOne({email: username}, function(err, foundUser) {
         if (err) {
