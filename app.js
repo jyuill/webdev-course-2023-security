@@ -6,7 +6,9 @@ const ejs = require("ejs");
 const app = express();
 const mongoose = require("mongoose");
 const encrypt = require("mongoose-encryption");
-const md5 = require("md5");
+//const md5 = require("md5"); // option for hashing pwd; bcrypt used instead
+const bcrypt = require("bcrypt");
+const saltRounds = 8;
 
 app.use(express.static("public"));
 app.set('view engine', 'ejs');
@@ -52,12 +54,32 @@ app.get("/register", function(req, res) {
 // new registration
 app.post("/register", function(req, res) {
     // collect inputs from form
-    const newUser = new User({
+    // basic or md5 method
+    /* const newUser = new User({
         email: req.body.username,
         //password: req.body.password
         // use md5 hashing
         password: md5(req.body.password)         
+    }); */
+    // bcrypt method with hash + salting
+    bcrypt.hash(req.body.password, saltRounds, function(err, hash) {
+        // Store hash in your password DB.
+        // collect inputs from form
+        const newUser = new User({
+            email: req.body.username,
+            password: hash         
+        });
+        newUser.save()
+        .then(() => {
+            // Handle successful save
+            res.render("secrets");
+        })
+        .catch((error) => {
+            // Handle save error
+            console.log(err);
+        }); 
     });
+    
     // save to database and show secrets pg
     /* as shown in course - now throws error
     newUser.save(function(err) {
@@ -68,6 +90,8 @@ app.post("/register", function(req, res) {
         }
     }); */
     // alt suggested by chatGPT
+    // works here with basic or md5 method
+    /* commented out since bcrypt used
     newUser.save()
         .then(() => {
             // Handle successful save
@@ -76,9 +100,8 @@ app.post("/register", function(req, res) {
         .catch((error) => {
             // Handle save error
             console.log(err);
-        });
-
-      
+        }); 
+        */
 });
 
 // login pg route
@@ -89,7 +112,10 @@ app.get("/login", function(req, res) {
 app.post("/login", function(req, res) {
     const username = req.body.username;
     // calc hashed version of pwd to compare to hashed version in database
-    const password = md5(req.body.password);
+    //const password = md5(req.body.password);
+    // basic OR for use with bcrypt
+    const password = req.body.password;
+    
     /* shown in course - no longer works
     User.findOne({email: username}, function(err, foundUser) {
         if (err) {
@@ -108,9 +134,19 @@ app.post("/login", function(req, res) {
     .then((foundUser) => {
         // Handle successful query
         if (foundUser) {
+            // basic OR md5 method
+            /*
             if (foundUser.password === password) {
                 res.render("secrets");
             }
+            */
+           // bcrypt: Load hash from your password DB.
+            bcrypt.compare(password, foundUser.password, function(err, result) {
+                if (result == true){
+                    res.render("secrets");
+                }
+            });
+           
         }
       })
       .catch((error) => {
