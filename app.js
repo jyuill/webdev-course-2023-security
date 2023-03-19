@@ -1,14 +1,21 @@
-//jshint esversion:6
+// Demonstration of app with authentication incl cookies & sessions
+// - builds on previous demos in app-auth-demo.js
+// - including:
+// 1. password in database (mongoose)
+// 2. password in database with basic encryption
+// 3. password in database with hashing 
+// 4. password in database with hashing + salting
+
 require('dotenv').config()
 const express = require("express");
 const bodyParser = require("body-parser");
 const ejs = require("ejs");
-const app = express();
 const mongoose = require("mongoose");
-const encrypt = require("mongoose-encryption");
-//const md5 = require("md5"); // option for hashing pwd; bcrypt used instead
-const bcrypt = require("bcrypt");
-const saltRounds = 8;
+const session = require('express-session');
+const passport = require('passport');
+const passportLocalMongoose = require('passport-local-mongoose');
+
+const app = express();
 
 app.use(express.static("public"));
 app.set('view engine', 'ejs');
@@ -16,30 +23,32 @@ app.use(bodyParser.urlencoded({
     extended: true
 }));
 
+app.use(session({
+    secret: "Our Test Secret.",
+    resave: false,
+    saveUninitialized: false
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
+
 // set up mongodb connection with new database
 mongoose.connect("mongodb://localhost:27017/userDB");
 // mongodb schema
-// couple options - more thorough, needed for advanced work, incl encryption
 const userSchema = new mongoose.Schema({
     email: String,
     password: String
 });
-/* simpler - javascript object if you're into the brevity thing
-const userSchema = {
-    email: String,
-    password: String
-}
-*/
-
-// set secret for encryption
-// moved to .env
-//const secret = "ourlittlesecret";
-// at save password will be decrypted; at find will be decrypted
-// substituting with md5 hashing 
-// userSchema.plugin(encrypt, { secret: process.env.SECRET, encryptedFields: ["password"]} );
+// manage session, salt and hash pwds etc
+userSchema.plugin(passportLocalMongoose);
 
 // new mongodb model (collection) using schema defined above
 const User = new mongoose.model("User", userSchema);
+
+// settings to get user info, set cookie, read cookie (?)
+passport.use(User.createStrategy());
+passport.serializeUser(User.serializeUser());
+passport.deserializeUser(User.deserializeUser());
 
 // home pg route
 app.get("/", function(req, res) {
@@ -51,57 +60,45 @@ app.get("/register", function(req, res) {
     res.render("register");
 });
 
+// secrets pg route - direct if authenticated frm prev session
+app.get("/secrets", function(req, res) {
+    console.log("try secrets");
+    if (req.isAuthenticated()) {
+        res.render("secrets");
+    } else {
+        res.redirect("/login");
+    }
+});
+
 // new registration
 app.post("/register", function(req, res) {
-    // collect inputs from form
-    // basic or md5 method
-    /* const newUser = new User({
-        email: req.body.username,
-        //password: req.body.password
-        // use md5 hashing
-        password: md5(req.body.password)         
-    }); */
-    // bcrypt method with hash + salting
-    bcrypt.hash(req.body.password, saltRounds, function(err, hash) {
-        // Store hash in your password DB.
-        // collect inputs from form
-        const newUser = new User({
-            email: req.body.username,
-            password: hash         
-        });
-        newUser.save()
-        .then(() => {
-            // Handle successful save
-            res.render("secrets");
-        })
-        .catch((error) => {
-            // Handle save error
+    /* code from course - no longer works
+    User.register({username: req.body.username}, req.body.password, function(err, user){
+        if(err) {
             console.log(err);
-        }); 
-    });
-    
-    // save to database and show secrets pg
-    /* as shown in course - now throws error
-    newUser.save(function(err) {
-        if (err) {
-            console.log(err);
+            res.redirect("/register");
         } else {
-            res.render("secrets");
+            passport.authenticate("local")(req, res, function(){
+                res.redirect("/secrets");
+            });   
         }
-    }); */
-    // alt suggested by chatGPT
-    // works here with basic or md5 method
-    /* commented out since bcrypt used
-    newUser.save()
+    });
+    */
+   // from Chat GPT - similar to below
+   // works but NOT with latest mongoose pkg
+   // as of March 2023
+   // use npm install mongoose@6.10.0
+   // if later mongoose installed, first do:
+   // npm uninstall mongoose
+   User.register({username: req.body.username}, req.body.password)
         .then(() => {
-            // Handle successful save
-            res.render("secrets");
+            passport.authenticate("local")(req, res, () => {
+                res.redirect("/secrets");
+            });
         })
-        .catch((error) => {
-            // Handle save error
-            console.log(err);
-        }); 
-        */
+        .catch(err => {
+            res.redirect("/register");
+        });
 });
 
 // login pg route
@@ -109,52 +106,31 @@ app.get("/login", function(req, res) {
     res.render("login");
 });
 // login confirm
+// works as shown in course
 app.post("/login", function(req, res) {
-    const username = req.body.username;
-    // calc hashed version of pwd to compare to hashed version in database
-    //const password = md5(req.body.password);
-    // basic OR for use with bcrypt
-    const password = req.body.password;
-    
-    /* shown in course - no longer works
-    User.findOne({email: username}, function(err, foundUser) {
+    const user = new User({
+        username: req.body.username,
+        password: req.body.password
+    });
+
+      req.login(user, function(err) {
         if (err) {
             console.log(err);
         } else {
-            if (foundUser) {
-                if (foundUser.password === password) {
-                    res.render("secrets");
-                }
-            }
-        }
-    });
-    */
-   // recommended by ChatGPT
-   User.findOne({ email: username })
-    .then((foundUser) => {
-        // Handle successful query
-        if (foundUser) {
-            // basic OR md5 method
-            /*
-            if (foundUser.password === password) {
-                res.render("secrets");
-            }
-            */
-           // bcrypt: Load hash from your password DB.
-            bcrypt.compare(password, foundUser.password, function(err, result) {
-                if (result == true){
-                    res.render("secrets");
-                }
+            passport.authenticate("local")(req, res, () => {
+                res.redirect("/secrets");
             });
-           
         }
-      })
-      .catch((error) => {
-        // Handle query error
-        console.log(error);
       });
-   
 });
+
+app.get("/logout", function(req, res) {
+    req.logout(function(err) {
+        if (err) { return next(err); }
+        res.redirect("/");
+    });
+});
+
 
 // confirming server
 app.listen(3000, function() {
