@@ -1,10 +1,11 @@
-// Demonstration of app with authentication incl cookies & sessions
-// - builds on previous demos in app-auth-demo.js
+// Demonstration of app with authentication via OAuth2 + Google
+// - builds on previous demos in app-cookie-sess.js
 // - including:
 // 1. password in database (mongoose)
 // 2. password in database with basic encryption
 // 3. password in database with hashing 
 // 4. password in database with hashing + salting
+// 5. passport.js for cookie/session auth mgmt
 
 require('dotenv').config()
 const express = require("express");
