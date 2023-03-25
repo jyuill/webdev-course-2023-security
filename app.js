@@ -12,9 +12,11 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const ejs = require("ejs");
 const mongoose = require("mongoose");
-const session = require('express-session');
-const passport = require('passport');
-const passportLocalMongoose = require('passport-local-mongoose');
+const session = require("express-session");
+const passport = require("passport");
+const passportLocalMongoose = require("passport-local-mongoose");
+const GoogleStrategy = require("passport-google-oauth20").Strategy;
+const findOrCreate = require("mongoose-findorcreate");
 
 const app = express();
 
@@ -36,25 +38,88 @@ app.use(passport.session());
 // set up mongodb connection with new database
 mongoose.connect("mongodb://localhost:27017/userDB");
 // mongodb schema
+// add googleId for Google Auth
 const userSchema = new mongoose.Schema({
     email: String,
-    password: String
+    password: String,
+    googleId: String
 });
 // manage session, salt and hash pwds etc
 userSchema.plugin(passportLocalMongoose);
+userSchema.plugin(findOrCreate);
 
 // new mongodb model (collection) using schema defined above
 const User = new mongoose.model("User", userSchema);
 
 // settings to get user info, set cookie, read cookie (?)
 passport.use(User.createStrategy());
-passport.serializeUser(User.serializeUser());
-passport.deserializeUser(User.deserializeUser());
+// serialize and deserialize for session mgmt
+// this simplified version doesn't work with google auth
+//passport.serializeUser(User.serializeUser());
+//passport.deserializeUser(User.deserializeUser());
+// for Google Auth
+// from course - no errors but doesn't require additional google acct selection on subsequent
+// - turns out that is as designed: users who login with local creds get signed out; 
+// - Google users don't get signed out because that can only be done by signing them out of Google
+passport.serializeUser(function(user, done) {
+    done(null, user.id);
+});
+passport.deserializeUser(function(id, done) {
+    User.findById(id, function(err, user) {
+        done(err, user);
+    });
+});
+
+// from https://www.passportjs.org/howtos/session/
+/* also works
+passport.serializeUser(function(user, cb) {
+    process.nextTick(function() {
+      return cb(null, {
+        id: user.id,
+        username: user.username,
+        picture: user.picture
+      });
+    });
+  });
+  
+  passport.deserializeUser(function(user, cb) {
+    process.nextTick(function() {
+      return cb(null, user);
+    });
+  });
+  */
+
+// Strategy for Google auth
+passport.use(new GoogleStrategy({
+    clientID: process.env.CLIENT_ID,
+    clientSecret: process.env.CLIENT_SECRET,
+    callbackURL: "http://localhost:3000/auth/google/secrets",
+    userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo"
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    console.log(profile);
+    User.findOrCreate({ googleId: profile.id }, function (err, user) {
+      return cb(err, user);
+    });
+  }
+));
 
 // home pg route
 app.get("/", function(req, res) {
     res.render("home");
 });
+
+// google auth
+app.get('/auth/google',
+  passport.authenticate('google', { scope: ['profile'] 
+}));
+// google auth callback - must match Authorize Redirect URIs in Google console setup
+app.get('/auth/google/secrets', 
+  passport.authenticate('google', { failureRedirect: '/login' }),
+  function(req, res) {
+    // Successful authentication, send to secrets.
+    res.redirect('/secrets');
+  });
 
 // register pg route
 app.get("/register", function(req, res) {
@@ -63,7 +128,7 @@ app.get("/register", function(req, res) {
 
 // secrets pg route - direct if authenticated frm prev session
 app.get("/secrets", function(req, res) {
-    console.log("try secrets");
+    //console.log("try secrets");
     if (req.isAuthenticated()) {
         res.render("secrets");
     } else {
