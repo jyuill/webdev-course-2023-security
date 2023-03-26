@@ -39,10 +39,12 @@ app.use(passport.session());
 mongoose.connect("mongodb://localhost:27017/userDB");
 // mongodb schema
 // add googleId for Google Auth
+// add secret for secret submitted by user
 const userSchema = new mongoose.Schema({
     email: String,
     password: String,
-    googleId: String
+    googleId: String,
+    secret: String
 });
 // manage session, salt and hash pwds etc
 userSchema.plugin(passportLocalMongoose);
@@ -129,11 +131,23 @@ app.get("/register", function(req, res) {
 // secrets pg route - direct if authenticated frm prev session
 app.get("/secrets", function(req, res) {
     //console.log("try secrets");
+    /* original version - show pre-submitted secret on secrets pg
     if (req.isAuthenticated()) {
         res.render("secrets");
     } else {
         res.redirect("/login");
     }
+    */
+   // find/show all secrets in database
+   User.find({"secret": {$ne: null}}, function(err, foundUsers) {
+    if (err) {
+        console.log(err);
+    } else {
+        if (foundUsers) {
+            res.render("secrets", {usersWithSecrets: foundUsers});
+        }
+    }
+   });
 });
 
 // new registration
@@ -197,6 +211,33 @@ app.get("/logout", function(req, res) {
     });
 });
 
+// Submit secrets
+// go to submit pg
+app.get("/submit", function(req, res) {
+    if (req.isAuthenticated()) {
+        res.render("submit");
+    } else {
+        res.redirect("/login");
+    }
+})
+// submit your secret
+app.post("/submit", function(req, res) {
+    // submit box on submit pg has name='secret' used for req.body below
+    const submittedSecret = req.body.secret;
+    User.findById(req.user.id, function(err, foundUser) {
+        if (err) {
+            console.log(err);
+        } else {
+            if (foundUser) {
+                foundUser.secret = submittedSecret;
+                foundUser.save(function() {
+                    res.redirect("/secrets");
+                });
+            }
+        }
+    });
+
+})
 
 // confirming server
 app.listen(3000, function() {
